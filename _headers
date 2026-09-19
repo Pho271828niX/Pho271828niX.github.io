@@ -1,0 +1,14 @@
+# Netlify / Cloudflare Pages headers for Unity WebGL (decompression fallback build)
+/Build/*.unityweb
+  Content-Type: application/octet-stream
+  Cache-Control: public, max-age=31536000, immutable
+
+/Build/*.loader.js
+  Content-Type: application/javascript
+  Cache-Control: public, max-age=3600
+
+/index.html
+  Cache-Control: no-cache
+
+/
+  Cache-Control: no-cache

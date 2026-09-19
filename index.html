@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>GraalWarriors</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        overscroll-behavior: none;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+      }
+      #unity-container, #unity-canvas {
+        touch-action: manipulation;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+      }
+    </style>
+    <script>
+      // Disable browser Media Session API and suppress system media controls/notifications
+      // for desktop (Chrome media overlay) and mobile (notification panel player).
+      (function () {
+        'use strict';
+
+        // 1. Neutralise MediaMetadata constructor completely.
+        if (typeof window.MediaMetadata !== 'undefined') {
+          try {
+            window.MediaMetadata = function () {};
+            window.MediaMetadata.prototype = {};
+          } catch (e) {}
+        }
+
+        // 2. Lock navigator.mediaSession so it can never show UI.
+        if ('mediaSession' in navigator) {
+          try {
+            var noop = function () {};
+
+            // Lock metadata to null.
+            Object.defineProperty(navigator.mediaSession, 'metadata', {
+              get: function () { return null; },
+              set: function () {},
+              configurable: true
+            });
+
+            // Lock playbackState to 'none'.
+            Object.defineProperty(navigator.mediaSession, 'playbackState', {
+              get: function () { return 'none'; },
+              set: function () {},
+              configurable: true
+            });
+
+            // No-op all known action handlers.
+            var actions = ['play', 'pause', 'stop', 'seekbackward', 'seekforward', 'seekto', 'previoustrack', 'nexttrack', 'skipad'];
+            for (var i = 0; i < actions.length; i++) {
+              try { navigator.mediaSession.setActionHandler(actions[i], noop); } catch (e) {}
+            }
+
+            // Prevent any future handler registration.
+            navigator.mediaSession.setActionHandler = noop;
+
+            // Neutralise setPositionState if present.
+            if (typeof navigator.mediaSession.setPositionState === 'function') {
+              navigator.mediaSession.setPositionState = noop;
+            }
+          } catch (e) {}
+        }
+
+        // 3. Intercept <audio> and <video> element creation.
+        var origCreateElement = document.createElement;
+        document.createElement = function (tagName) {
+          var el = origCreateElement.call(document, tagName);
+          var tag = tagName.toLowerCase();
+          if (tag === 'audio' || tag === 'video') {
+            try {
+              el.disableRemotePlayback = true;
+              if (el.setAttribute) {
+                el.setAttribute('disableRemotePlayback', 'true');
+              }
+              el.controls = false;
+              el.preload = 'none';
+              if (el.style) {
+                el.style.display = 'none';
+              }
+            } catch (e) {}
+          }
+          return el;
+        };
+
+        // 4. Patch window.Audio constructor.
+        var OrigAudio = window.Audio;
+        if (OrigAudio) {
+          window.Audio = function (src) {
+            var audio = new OrigAudio(src);
+            try {
+              audio.disableRemotePlayback = true;
+              if (audio.setAttribute) {
+                audio.setAttribute('disableRemotePlayback', 'true');
+              }
+              audio.controls = false;
+              audio.preload = 'none';
+              if (audio.style) {
+                audio.style.display = 'none';
+              }
+            } catch (e) {}
+            return audio;
+          };
+        }
+
+        // 5. Aggressive periodic reset (catches late initialisations from ads/SDKs).
+        setInterval(function () {
+          if ('mediaSession' in navigator) {
+            try {
+              navigator.mediaSession.metadata = null;
+              navigator.mediaSession.playbackState = 'none';
+            } catch (e) {}
+          }
+        }, 500);
+      })();
+    </script>
+    <link rel="shortcut icon" href="TemplateData/favicon.ico">
+    <link rel="stylesheet" href="TemplateData/style.css">
+  </head>
+  <body>
+    <div id="unity-container" class="unity-desktop">
+      <canvas id="unity-canvas" tabindex="-1"></canvas>
+      <div id="unity-loading-bar">
+        <div id="unity-logo"></div>
+        <div id="unity-progress-bar-empty">
+          <div id="unity-progress-bar-full"></div>
+        </div>
+      </div>
+      <div id="unity-footer">
+        <div id="unity-logo-title-footer"></div>
+        <div id="unity-fullscreen-button"></div>
+        <div id="unity-build-title">GraalWarriors</div>
+      </div>
+    </div>
+    <script>
+      // Platform detection: MirraSDK auto-detects the platform by page host and loads
+      // vkBridge itself on VK, so the Yandex SDK must only be loaded outside VK.
+      var isVkPlatform = false;
+      try {
+        var pageUrl = String((window.location && window.location.href) || '').toLowerCase();
+        var referrerUrl = String(document.referrer || '').toLowerCase();
+        isVkPlatform = pageUrl.indexOf('vk.') !== -1
+          || pageUrl.indexOf('vk.com') !== -1
+          || referrerUrl.indexOf('vk.') !== -1
+          || typeof window.vkBridge !== 'undefined';
+      } catch (e) {}
+
+      if (isVkPlatform) {
+        // On VK there is no YaGames; resolve immediately so awaiters do not hang.
+        window.ysdkPromise = Promise.resolve(null);
+        console.log('[YandexDirect] VK platform detected, skipping Yandex SDK');
+      } else {
+        var ysdkScript = document.createElement('script');
+        ysdkScript.src = 'https://yandex.ru/games/sdk/v2';
+        ysdkScript.onload = function() {
+          window.ysdkPromise = YaGames.init();
+          window.ysdkPromise.then(function(sdk) {
+            window.ysdk = sdk;
+            console.log('[YandexDirect] SDK initialized');
+          }).catch(function(err) {
+            console.error('[YandexDirect] SDK init error:', err);
+          });
+        };
+        ysdkScript.onerror = function(err) {
+          window.ysdkPromise = Promise.resolve(null);
+          console.error('[YandexDirect] SDK load error:', err);
+        };
+        document.head.appendChild(ysdkScript);
+      }
+    </script>
+    <script>
+      var canvas = document.querySelector("#unity-canvas");
+
+      // Suppress WebGL warning banners for end users; log to console only.
+      function unityShowBanner(msg, type) {
+        if (type === 'error') {
+          console.error('[Unity WebGL]', msg);
+        } else {
+          console.warn('[Unity WebGL]', msg);
+        }
+      }
+
+      var buildUrl = "Build";
+      var loaderUrl = buildUrl + "/431124083173a99751cd225b978be9f9.loader.js";
+      var config = {
+        arguments: [],
+        dataUrl: buildUrl + "/59138d63befa69cfb1571fc946c38da5.data.unityweb",
+        frameworkUrl: buildUrl + "/3800730102e2baa7a12ac2cd51685f5b.framework.js.unityweb",
+        codeUrl: buildUrl + "/d7ea0060cb8c804cea5742652d31e63a.wasm.unityweb",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "PhoeniXGames",
+        productName: "GraalWarriors",
+        productVersion: "1.0",
+        showBanner: unityShowBanner,
+        matchWebGLToCanvasSize: true,
+      };
+
+      // Responsive canvas sizing
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+
+      function resizeCanvas() {
+        var dpr = window.devicePixelRatio || 1;
+        var w = Math.floor(canvas.clientWidth * dpr);
+        var h = Math.floor(canvas.clientHeight * dpr);
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+        }
+      }
+
+      if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(resizeCanvas).observe(canvas);
+      }
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+
+      // Mobile: orientation lock and viewport
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        document.querySelector("#unity-container").className = "unity-mobile";
+        canvas.className = "unity-mobile";
+
+        if (screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock('landscape').catch(function() {});
+        }
+      }
+
+      // Prevent context menu on long-tap
+      canvas.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+      });
+
+      // Visibility change fallback for pause/resume (MirraSDK handles this natively,
+      // but this provides extra reliability on browsers where OnApplicationPause is delayed).
+      document.addEventListener('visibilitychange', function() {
+        if (typeof unityInstance !== 'undefined' && unityInstance) {
+          unityInstance.SendMessage('MirraPlatformService', 'OnApplicationPause', document.hidden ? 'true' : 'false');
+        }
+      });
+
+      document.querySelector("#unity-loading-bar").style.display = "block";
+
+      var script = document.createElement("script");
+      script.src = loaderUrl;
+      script.onload = () => {
+        createUnityInstance(canvas, config, (progress) => {
+          document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
+        }).then((unityInstance) => {
+          document.querySelector("#unity-loading-bar").style.display = "none";
+          document.querySelector("#unity-fullscreen-button").onclick = () => {
+            unityInstance.SetFullscreen(1);
+          };
+        }).catch((message) => {
+          alert(message);
+        });
+      };
+
+      document.body.appendChild(script);
+    </script>
+  </body>
+</html>
