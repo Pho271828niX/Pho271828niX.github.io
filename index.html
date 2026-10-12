@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en-us">
+<html lang="ru">
   <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
@@ -124,6 +124,39 @@
         }, 500);
       })();
     </script>
+    <script>
+      // Yandex Metrica counter for funnel goals (goal names: Assets/Scripts/Services/FunnelAnalyticsService.cs).
+      // Put the counter number from metrika.yandex.ru here; 0 disables analytics.
+      window.graalMetricaCounterId = 0;
+      window.graalReachGoal = function (goal) {
+        if (window.graalMetricaCounterId && typeof window.ym === 'function') {
+          window.ym(window.graalMetricaCounterId, 'reachGoal', goal);
+        }
+      };
+
+      (function (counterId) {
+        if (!counterId) {
+          return;
+        }
+
+        (function (m, e, t, r, i, k, a) {
+          m[i] = m[i] || function () { (m[i].a = m[i].a || []).push(arguments); };
+          m[i].l = 1 * new Date();
+          for (var j = 0; j < document.scripts.length; j++) {
+            if (document.scripts[j].src === r) { return; }
+          }
+          k = e.createElement(t);
+          a = e.getElementsByTagName(t)[0];
+          k.async = 1;
+          k.src = r;
+          a.parentNode.insertBefore(k, a);
+        })(window, document, 'script', 'https://mc.yandex.ru/metrika/tag.js', 'ym');
+
+        // Webvisor and click maps are useless on a WebGL canvas and only add load.
+        window.ym(counterId, 'init', { clickmap: false, trackLinks: false, accurateTrackBounce: true, webvisor: false });
+        window.graalReachGoal('load_start');
+      })(window.graalMetricaCounterId);
+    </script>
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
   </head>
@@ -143,19 +176,22 @@
       </div>
     </div>
     <script>
-      // Platform detection: MirraSDK auto-detects the platform by page host and loads
-      // vkBridge itself on VK, so the Yandex SDK must only be loaded outside VK.
+      // Platform detection: MirraSDK loads vkBridge itself on VK, so the Yandex SDK must only be
+      // loaded outside VK. VK passes launch params (vk_app_id, vk_platform, ...) in the iframe URL;
+      // its mobile clients send no referrer. vk_platform.jspre reuses window.__gwVkLaunch.
       var isVkPlatform = false;
       try {
-        var pageUrl = String((window.location && window.location.href) || '').toLowerCase();
-        var referrerUrl = String(document.referrer || '').toLowerCase();
-        isVkPlatform = pageUrl.indexOf('vk.') !== -1
-          || pageUrl.indexOf('vk.com') !== -1
-          || referrerUrl.indexOf('vk.') !== -1
-          || typeof window.vkBridge !== 'undefined';
+        var launchSearch = window.location.search || '';
+        var referrerHost = document.referrer ? new URL(document.referrer).hostname.toLowerCase() : '';
+        isVkPlatform = /[?&](vk_app_id|vk_platform|vk_user_id)=/.test(launchSearch)
+          || (/[?&]api_id=/.test(launchSearch) && /[?&]viewer_id=/.test(launchSearch))
+          || /(^|\.)vk\.(com|ru)$/.test(referrerHost);
       } catch (e) {}
+      window.__gwVkLaunch = isVkPlatform;
 
       if (isVkPlatform) {
+        // Keeps the canvas inside the notch/home-indicator safe areas of the VK mobile apps.
+        document.documentElement.classList.add('vk-platform');
         // On VK there is no YaGames; resolve immediately so awaiters do not hang.
         window.ysdkPromise = Promise.resolve(null);
         console.log('[YandexDirect] VK platform detected, skipping Yandex SDK');
@@ -191,12 +227,12 @@
       }
 
       var buildUrl = "Build";
-      var loaderUrl = buildUrl + "/ba9cfeb350d30b1538ed0a34ea1d051a.loader.js";
+      var loaderUrl = buildUrl + "/bc8060526ff1d2efda0f922a49bec4ca.loader.js";
       var config = {
         arguments: [],
-        dataUrl: buildUrl + "/52d821a129abb01c36890d837a414a8d.data.unityweb",
-        frameworkUrl: buildUrl + "/3800730102e2baa7a12ac2cd51685f5b.framework.js.unityweb",
-        codeUrl: buildUrl + "/9a77bbb7c24557fd4fb215667991dbd5.wasm.unityweb",
+        dataUrl: buildUrl + "/0e0da8609f39bea77c6e9af91da260e0.data.unityweb",
+        frameworkUrl: buildUrl + "/307d1d0914b031e1625ecda8530c90e0.framework.js.unityweb",
+        codeUrl: buildUrl + "/53f2e88742c4e3247c688e729569e583.wasm.unityweb",
         streamingAssetsUrl: "StreamingAssets",
         companyName: "PhoeniXGames",
         productName: "GraalWarriors",
@@ -256,14 +292,41 @@
         createUnityInstance(canvas, config, (progress) => {
           document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
         }).then((unityInstance) => {
+          window.graalReachGoal('load_complete');
           document.querySelector("#unity-loading-bar").style.display = "none";
           document.querySelector("#unity-fullscreen-button").onclick = () => {
             unityInstance.SetFullscreen(1);
           };
         }).catch((message) => {
-          alert(message);
+          window.graalReachGoal('load_error');
+          showLoadError(message);
         });
       };
+
+      // Error placeholder instead of a browser alert (VK and Yandex both require one).
+      function showLoadError(message) {
+        console.error('[Unity WebGL] load failed:', message);
+        document.querySelector("#unity-loading-bar").style.display = "none";
+        var lang = '';
+        try {
+          var langMatch = /[?&](vk_language|lang)=([^&#]+)/.exec(window.location.search || '');
+          lang = (langMatch ? langMatch[2] : (navigator.language || 'ru')).toLowerCase();
+        } catch (e) {}
+        var english = lang.indexOf('en') === 0;
+        var panel = document.createElement('div');
+        panel.id = 'unity-load-error';
+        var text = document.createElement('p');
+        text.textContent = english
+          ? 'The game failed to load. Check your connection and try again.'
+          : 'Не удалось загрузить игру. Проверьте подключение к интернету и попробуйте ещё раз.';
+        var retry = document.createElement('button');
+        retry.type = 'button';
+        retry.textContent = english ? 'Reload' : 'Перезагрузить';
+        retry.onclick = function () { window.location.reload(); };
+        panel.appendChild(text);
+        panel.appendChild(retry);
+        document.querySelector("#unity-container").appendChild(panel);
+      }
 
       document.body.appendChild(script);
     </script>
